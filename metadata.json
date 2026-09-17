@@ -1,0 +1,6 @@
+{
+  "name": "GoTeam Running",
+  "description": "Assessoria de corrida Go Team: planilhas personalizadas de treino para 5K, 10K e 21K. Todo corredor começa com o primeiro passo.",
+  "requestFramePermissions": ["geolocation", "notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

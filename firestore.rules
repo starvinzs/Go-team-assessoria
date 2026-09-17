@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    // Team members & team settings
+    match /team_members/{memberId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Workouts & custom adaptive training plans
+    match /workouts/{workoutId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Logged run activities
+    match /activities/{activityId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Team tasks and goals
+    match /team_tasks/{taskId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Social achievements & kudos
+    match /achievements/{achievementId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Saved races and race plans
+    match /saved_races/{raceId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Payments and plan confirmations
+    match /payments/{paymentId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}

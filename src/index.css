@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --color-petroleo: #0d3b45;
+  --color-petroleo-dark: #082830;
+  --color-lima: #c6f43a;
+  --color-lima-dark: #a5cf2a;
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-sans: "Inter", sans-serif;
+}
+
+:root {
+  --petroleo: #0d3b45;
+  --petroleo-dark: #082830;
+  --lima: #c6f43a;
+  --lima-dark: #a5cf2a;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #ffffff;
+  color: #0d3b45;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: 'Barlow Condensed', sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.gradient-hero {
+  background: linear-gradient(120deg, #082830 0%, #0d3b45 60%, #124e5a 100%);
+}
+
+.track-lines {
+  background-image: repeating-linear-gradient(90deg, rgba(198, 244, 58, 0.9) 0 40px, transparent 40px 80px);
+}
+
+.shadow-glow {
+  box-shadow: 0 10px 40px -10px rgba(198, 244, 58, 0.55);
+}
+
+.shadow-elegant {
+  box-shadow: 0 25px 60px -20px rgba(8, 40, 48, 0.35);
+}
+
+.btn-lima {
+  background-color: #c6f43a;
+  color: #0d3b45;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.btn-lima:hover {
+  transform: scale(1.04);
+}
+
+.welcome-bg {
+  background: linear-gradient(180deg, rgba(8, 40, 48, 0.6) 0%, rgba(8, 40, 48, 0.88) 65%, rgba(8, 40, 48, 1) 100%), url('/assets/hero-runners.jpg');
+  background-size: cover;
+  background-position: center;
+}
