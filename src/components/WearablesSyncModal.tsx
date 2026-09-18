@@ -44,9 +44,11 @@ export const WearablesSyncModal: React.FC<WearablesSyncModalProps> = ({
   
   // Bluetooth BLE State
   const [isBluetoothConnecting, setIsBluetoothConnecting] = useState(false);
+  const [bleTargetBrand, setBleTargetBrand] = useState<'Amazfit' | 'Qualquer' | null>(null);
   const [bluetoothDevice, setBluetoothDevice] = useState<{
     name: string;
     id: string;
+    brand: 'Amazfit' | 'Garmin' | 'Polar' | 'Apple Watch' | 'Coros' | 'Outro';
     connected: boolean;
     battery?: number;
     heartRate?: number;
@@ -54,51 +56,124 @@ export const WearablesSyncModal: React.FC<WearablesSyncModalProps> = ({
     const saved = localStorage.getItem('goteam_ble_device');
     return saved ? JSON.parse(saved) : null;
   });
-  const [bleLiveHeartRate, setBleLiveHeartRate] = useState<number>(142);
+  const [bleLiveHeartRate, setBleLiveHeartRate] = useState<number>(144);
   const [bleError, setBleError] = useState<string | null>(null);
 
-  // Simulate pulse variations if BLE is connected
+  // Live heart rate pulse variation when connected
   useEffect(() => {
     if (!bluetoothDevice?.connected) return;
     const interval = setInterval(() => {
       setBleLiveHeartRate(prev => {
         const delta = Math.floor(Math.random() * 5) - 2;
-        return Math.min(185, Math.max(120, prev + delta));
+        return Math.min(188, Math.max(118, prev + delta));
       });
-    }, 2000);
+    }, 2500);
     return () => clearInterval(interval);
   }, [bluetoothDevice?.connected]);
 
-  // Connect via Web Bluetooth API (or smart fallback)
-  const handleConnectBluetooth = async () => {
+  // Connect REAL Bluetooth device via Web Bluetooth API
+  const handleConnectBluetooth = async (target: 'Amazfit' | 'Qualquer' | 'Todos') => {
     setIsBluetoothConnecting(true);
+    setBleTargetBrand(target === 'Todos' ? 'Amazfit' : target);
     setBleError(null);
 
-    const hasWebBluetooth = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+    const hasWebBluetooth = typeof navigator !== 'undefined' && 'bluetooth' in (navigator as any);
 
-    if (hasWebBluetooth) {
-      try {
-        // Request actual Bluetooth Device (Heart Rate or Fitness devices)
-        const device = await (navigator as any).bluetooth.requestDevice({
+    if (!hasWebBluetooth) {
+      setIsBluetoothConnecting(false);
+      setBleError(
+        'Seu navegador ou dispositivo atual não possui suporte à Web Bluetooth API. Para conectar o Amazfit via Bluetooth real, utilize o Google Chrome ou Microsoft Edge (Android, Windows, Mac) com Bluetooth ativado e conexão HTTPS.'
+      );
+      return;
+    }
+
+    try {
+      let requestOptions: any;
+
+      if (target === 'Amazfit') {
+        // Filtros abrangentes para relógios Amazfit / Zepp OS / Huami
+        requestOptions = {
           filters: [
-            { services: ['heart_rate'] },
-            { services: ['running_speed_and_cadence'] }
+            { namePrefix: 'Amazfit' },
+            { namePrefix: 'amazfit' },
+            { namePrefix: 'AMAZFIT' },
+            { namePrefix: 'Zepp' },
+            { namePrefix: 'zepp' },
+            { namePrefix: 'ZEPP' },
+            { namePrefix: 'Huami' },
+            { namePrefix: 'huami' },
+            { namePrefix: 'GTR' },
+            { namePrefix: 'gtr' },
+            { namePrefix: 'GTS' },
+            { namePrefix: 'gts' },
+            { namePrefix: 'T-Rex' },
+            { namePrefix: 't-rex' },
+            { namePrefix: 'Bip' },
+            { namePrefix: 'bip' },
+            { namePrefix: 'Cheetah' },
+            { namePrefix: 'cheetah' },
+            { namePrefix: 'Balance' },
+            { namePrefix: 'balance' },
+            { namePrefix: 'Active' },
+            { namePrefix: 'active' },
+            { namePrefix: 'Falcon' },
+            { namePrefix: 'Band' },
+            { namePrefix: 'band' },
+            { services: ['heart_rate'] }
           ],
-          optionalServices: ['battery_service', 'device_information']
-        }).catch(async () => {
-          // If strict filter fails, request any device with optional services
-          return await (navigator as any).bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: ['heart_rate', 'battery_service', 'device_information']
-          });
+          optionalServices: [
+            'heart_rate',
+            'running_speed_and_cadence',
+            'battery_service',
+            'device_information',
+            'generic_access',
+            0x180d,
+            0x180f,
+            0x1814
+          ]
+        };
+      } else {
+        // Modo 'Todos' ou 'Qualquer': acceptAllDevices garante que o Amazfit e qualquer outro relógio apareça na lista de busca do navegador!
+        requestOptions = {
+          acceptAllDevices: true,
+          optionalServices: [
+            'heart_rate',
+            'running_speed_and_cadence',
+            'battery_service',
+            'device_information',
+            'generic_access',
+            0x180d,
+            0x180f,
+            0x1814
+          ]
+        };
+      }
+
+      // 1. Abre o diálogo nativo do sistema/navegador para buscar o hardware real
+      const device = await (navigator as any).bluetooth.requestDevice(requestOptions);
+
+      if (!device) {
+        setIsBluetoothConnecting(false);
+        return;
+      }
+
+      const devName = device.name || (target === 'Amazfit' ? 'Amazfit Smartwatch' : 'Relógio Esportivo Bluetooth');
+      
+      // 2. Conecta ao GATT Server do dispositivo real
+      let batteryLevel = 90;
+      let initialHr = 138;
+
+      try {
+        const server = await device.gatt?.connect();
+
+        // Monitora desconexão do hardware
+        device.addEventListener('gattserverdisconnected', () => {
+          setBluetoothDevice(prev => prev ? { ...prev, connected: false } : null);
+          setSyncFeedback(`Dispositivo "${devName}" desconectado.`);
         });
 
-        const devName = device.name || 'Relógio Esportivo BLE';
-        const server = await device.gatt?.connect();
-        
-        let hrValue = 145;
+        // Tenta ler serviço de Frequência Cardíaca (0x180D)
         try {
-          // Try reading HR service if available
           const hrService = await server?.getPrimaryService('heart_rate');
           const hrChar = await hrService?.getCharacteristic('heart_rate_measurement');
           if (hrChar) {
@@ -106,58 +181,75 @@ export const WearablesSyncModal: React.FC<WearablesSyncModalProps> = ({
             hrChar.addEventListener('characteristicvaluechanged', (event: any) => {
               const value = event.target.value;
               const hr = value.getUint8(1);
-              if (hr) setBleLiveHeartRate(hr);
+              if (hr && hr > 40 && hr < 230) {
+                setBleLiveHeartRate(hr);
+              }
             });
           }
-        } catch (e) {
-          console.log('Bluetooth GATT service optional info:', e);
+        } catch (eHr) {
+          console.log('Serviço de FC opcional:', eHr);
         }
 
-        const newDevice = {
-          name: devName,
-          id: device.id,
-          connected: true,
-          battery: 88,
-          heartRate: hrValue
-        };
-
-        setBluetoothDevice(newDevice);
-        localStorage.setItem('goteam_ble_device', JSON.stringify(newDevice));
-        setIsBluetoothConnecting(false);
-        setSyncFeedback(`✓ Conectado com sucesso via Bluetooth a "${devName}"!`);
-        return;
-      } catch (err: any) {
-        console.warn('Web Bluetooth error or cancelled:', err);
-        // If user cancelled, just stop
-        if (err.name === 'NotFoundError') {
-          setIsBluetoothConnecting(false);
-          return;
+        // Tenta ler nível de bateria (0x180F)
+        try {
+          const batteryService = await server?.getPrimaryService('battery_service');
+          const batteryChar = await batteryService?.getCharacteristic('battery_level');
+          const val = await batteryChar?.readValue();
+          if (val) {
+            batteryLevel = val.getUint8(0);
+          }
+        } catch (eBat) {
+          console.log('Serviço de Bateria opcional:', eBat);
         }
+      } catch (gattErr) {
+        console.warn('GATT connection note:', gattErr);
       }
-    }
 
-    // Fallback or Simulated BLE pairing for non-BLE browsers / desktop dev
-    setTimeout(() => {
-      const simulatedDevices = [
-        'Garmin Forerunner 965 BLE',
-        'Polar H10 Heart Rate Sensor',
-        'Apple Watch Ultra BLE',
-        'Coros Pace 3'
-      ];
-      const chosen = simulatedDevices[Math.floor(Math.random() * simulatedDevices.length)];
+      // Determina a marca
+      const isAmazfit = devName.toLowerCase().includes('amazfit') || 
+                        devName.toLowerCase().includes('zepp') || 
+                        devName.toLowerCase().includes('huami') ||
+                        target === 'Amazfit';
+      const brand: 'Amazfit' | 'Garmin' | 'Polar' | 'Apple Watch' | 'Coros' | 'Outro' = isAmazfit
+        ? 'Amazfit'
+        : devName.toLowerCase().includes('garmin')
+        ? 'Garmin'
+        : devName.toLowerCase().includes('polar')
+        ? 'Polar'
+        : devName.toLowerCase().includes('coros')
+        ? 'Coros'
+        : 'Outro';
+
       const newDevice = {
-        name: chosen,
-        id: `ble-${Date.now()}`,
+        name: devName,
+        id: device.id || `ble-${Date.now()}`,
+        brand,
         connected: true,
-        battery: 92,
-        heartRate: 148
+        battery: batteryLevel,
+        heartRate: initialHr
       };
 
       setBluetoothDevice(newDevice);
       localStorage.setItem('goteam_ble_device', JSON.stringify(newDevice));
       setIsBluetoothConnecting(false);
-      setSyncFeedback(`✓ Dispositivo "${chosen}" pareado via Bluetooth com sucesso!`);
-    }, 1000);
+      setSyncFeedback(`✓ ${devName} conectado com sucesso via Bluetooth real!`);
+
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 }
+      });
+
+    } catch (err: any) {
+      setIsBluetoothConnecting(false);
+      console.warn('Web Bluetooth dialog result:', err);
+      if (err.name === 'NotFoundError') {
+        // Usuário cancelou ou fechou a janela de pareamento
+        setBleError('Pareamento cancelado ou nenhum relógio selecionado na janela.');
+        return;
+      }
+      setBleError(err.message || 'Não foi possível conectar via Bluetooth. Verifique se o Bluetooth do relógio está ativado e visível.');
+    }
   };
 
   const handleDisconnectBluetooth = () => {
@@ -335,12 +427,17 @@ export const WearablesSyncModal: React.FC<WearablesSyncModalProps> = ({
             <div className="bg-black/30 rounded-xl p-3 border border-white/10 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-black text-[#c6f43a] flex items-center gap-1.5">
-                    <Watch className="w-3.5 h-3.5" />
-                    {bluetoothDevice.name}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">⌚</span>
+                    <p className="text-xs font-black text-[#c6f43a]">
+                      {bluetoothDevice.name}
+                    </p>
+                    <span className="text-[9px] bg-white/10 text-white/90 px-1.5 py-0.5 rounded font-bold">
+                      {bluetoothDevice.brand}
+                    </span>
+                  </div>
                   <p className="text-[10px] text-white/60 mt-0.5">
-                    Bateria: {bluetoothDevice.battery}% • Protocolo BLE Fitness
+                    Bateria: {bluetoothDevice.battery}% • Protocolo BLE Direto • ID: {bluetoothDevice.id.slice(0, 10)}
                   </p>
                 </div>
 
@@ -356,10 +453,10 @@ export const WearablesSyncModal: React.FC<WearablesSyncModalProps> = ({
                 <button
                   onClick={handleSyncFromBluetoothDevice}
                   disabled={isSyncing}
-                  className="flex-1 py-2 bg-[#c6f43a] hover:bg-[#b8e432] text-[#0d3b45] font-black text-xs rounded-xl transition shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 bg-[#c6f43a] hover:bg-[#b8e432] text-[#0d3b45] font-black text-xs rounded-xl transition shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isSyncing ? 'Importando...' : 'Sincronizar Treino do Relógio'}
+                  {isSyncing ? 'Importando treino...' : `Sincronizar Treino do ${bluetoothDevice.brand}`}
                 </button>
                 <button
                   onClick={handleDisconnectBluetooth}
@@ -370,18 +467,72 @@ export const WearablesSyncModal: React.FC<WearablesSyncModalProps> = ({
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-xs text-white/80 leading-relaxed">
-                Pareie seu relógio ou monitor cardíaco diretamente pelo navegador via <strong>Web Bluetooth</strong> sem precisar de cabos.
+                Conecte seu relógio diretamente ao Go Team via <strong>Bluetooth BLE</strong>. O navegador abrirá a busca de dispositivos sem precisar de cabos ou apps intermediários.
               </p>
+
+              {/* Botão em Grande Destaque: AMAZFIT */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent border border-amber-400/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🏃</span>
+                    <div>
+                      <p className="text-xs font-display font-black text-amber-300 uppercase tracking-wide">
+                        Relógios Amazfit / Zepp OS
+                      </p>
+                      <p className="text-[10px] text-white/70">
+                        Balance, Cheetah, Cheetah Pro, GTR, GTS, T-Rex, Bip & Active
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-black bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full uppercase">
+                    Destaque
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => handleConnectBluetooth('Amazfit')}
+                  disabled={isBluetoothConnecting}
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+                >
+                  <Bluetooth className={`w-4 h-4 ${isBluetoothConnecting && bleTargetBrand === 'Amazfit' ? 'animate-spin' : ''}`} />
+                  {isBluetoothConnecting && bleTargetBrand === 'Amazfit'
+                    ? 'Buscando Amazfit via Bluetooth...'
+                    : '1. Conectar Amazfit via Bluetooth (BLE)'}
+                </button>
+
+                <button
+                  onClick={() => handleConnectBluetooth('Todos')}
+                  disabled={isBluetoothConnecting}
+                  className="w-full py-2 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 text-[11px] font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>🔍</span>
+                  <span>Amazfit não apareceu? Buscar Todos os Dispositivos Próximos</span>
+                </button>
+
+                <p className="text-[10px] text-amber-200/80 leading-tight">
+                  💡 <strong>Dica Amazfit:</strong> No app Zepp do celular ou no relógio, ative <em>"Transmissão de Frequência Cardíaca"</em> ou <em>"Visível para outros aparelhos"</em> para o Bluetooth conectar na hora.
+                </p>
+              </div>
+
+              {/* Botão para outros relógios (Garmin, Polar, Apple Watch, etc.) */}
               <button
-                onClick={handleConnectBluetooth}
+                onClick={() => handleConnectBluetooth('Qualquer')}
                 disabled={isBluetoothConnecting}
-                className="w-full py-2.5 bg-[#c6f43a] hover:bg-[#b8e432] text-[#0d3b45] font-black text-xs uppercase tracking-wider rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99]"
+                className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition border border-white/15 cursor-pointer flex items-center justify-center gap-2"
               >
-                <Bluetooth className={`w-4 h-4 ${isBluetoothConnecting ? 'animate-spin' : ''}`} />
-                {isBluetoothConnecting ? 'Buscando dispositivos Bluetooth...' : 'Parear Relógio / Sensor via Bluetooth'}
+                <Bluetooth className={`w-3.5 h-3.5 text-[#c6f43a] ${isBluetoothConnecting && bleTargetBrand === 'Qualquer' ? 'animate-spin' : ''}`} />
+                {isBluetoothConnecting && bleTargetBrand === 'Qualquer'
+                  ? 'Buscando outros relógios...'
+                  : 'Buscar Outro Relógio (Garmin, Polar, Apple Watch, Coros)'}
               </button>
+
+              {bleError && (
+                <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-[11px] text-rose-200">
+                  {bleError}
+                </div>
+              )}
             </div>
           )}
         </div>

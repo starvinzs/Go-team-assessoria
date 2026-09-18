@@ -104,15 +104,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   };
 
   const handleDemoStudent = (name: string, email: string, city: string, paceGroup: any) => {
+    const isCoach = email === 'starvinzs@gmail.com';
     const demo: LoginUserData = {
-      name,
+      name: isCoach ? 'Leandro Irineu da Silva' : name,
       email,
       phone: '(11) 98765-4321',
       city,
-      age: 28,
-      gender: 'F',
-      runningLevel: 'intermediario',
-      paceGroup
+      age: isCoach ? 38 : 28,
+      gender: isCoach ? 'M' : 'F',
+      runningLevel: isCoach ? 'avancado' : 'intermediario',
+      paceGroup: isCoach ? 'Sub-20' : paceGroup
     };
     localStorage.setItem('goteam_athlete_profile', JSON.stringify(demo));
     onSuccess(demo);
@@ -240,6 +241,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 >
                   <p className="font-bold text-[#0d3b45]">Lucas Rocha</p>
                   <p className="text-[10px] text-slate-500">Rio de Janeiro • Sub-30</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoStudent('Leandro Irineu', 'starvinzs@gmail.com', 'São Paulo, SP', 'Sub-20')}
+                  className="col-span-2 p-2.5 rounded-xl border-2 border-[#c6f43a] hover:bg-emerald-50 bg-[#0d3b45] text-white text-left text-xs transition cursor-pointer flex items-center justify-between shadow-sm"
+                >
+                  <div>
+                    <p className="font-bold text-[#c6f43a] flex items-center gap-1.5">
+                      <span>👑</span>
+                      <span>Treinador Leandro (starvinzs@gmail.com)</span>
+                    </p>
+                    <p className="text-[10px] text-white/80">Login Professor • Acesso Exclusivo à Anamnese dos Alunos</p>
+                  </div>
+                  <span className="text-[9px] font-black bg-[#c6f43a] text-[#0d3b45] px-2 py-0.5 rounded uppercase">
+                    Coach
+                  </span>
                 </button>
               </div>
             </div>

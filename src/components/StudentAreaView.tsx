@@ -87,8 +87,8 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
   onSwitchUser,
   teamMembers
 }) => {
-  // Tabs: 'treinos' | 'progresso' | 'evoluir' | 'perfil'
-  const [activeTab, setActiveTab] = useState<'treinos' | 'progresso' | 'evoluir' | 'perfil'>('treinos');
+  // Tabs: 'perfil' | 'treinos' | 'progresso' | 'cadastro'
+  const [activeTab, setActiveTab] = useState<'treinos' | 'progresso' | 'perfil' | 'cadastro'>('treinos');
 
   // Active plan (5K, 10K, 21K)
   const [selectedPlanId, setSelectedPlanId] = useState<'5K' | '10K' | '21K'>(() => {
@@ -315,6 +315,14 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
 
   const [isWeightFormOpen, setIsWeightFormOpen] = useState(false);
   const [newPeso, setNewPeso] = useState('');
+  const [isEditWeightModalOpen, setIsEditWeightModalOpen] = useState(false);
+
+  // Peso corporal do aluno
+  const currentAthleteWeight = weights.length > 0 ? weights[weights.length - 1].peso : (anamneseData?.weightKg || 75.0);
+  const [editWeightValue, setEditWeightValue] = useState<string>(() => String(currentAthleteWeight));
+
+  // Detecção de login do professor Coach (starvinzs@gmail.com)
+  const isCoach = (currentUser.email || '').toLowerCase().trim() === 'starvinzs@gmail.com' || (athleteProfile.email || '').toLowerCase().trim() === 'starvinzs@gmail.com';
 
   // Calendar month offset
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
@@ -955,6 +963,31 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
     setIsWeightFormOpen(false);
   };
 
+  // Atualização direta do peso corporal pelo botão editável do perfil
+  const handleUpdateDirectWeight = (pesoNum: number) => {
+    if (isNaN(pesoNum) || pesoNum <= 20 || pesoNum >= 300) return;
+    const now = new Date();
+    const label = `${now.getDate()} ${['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][now.getMonth()]}`;
+    const rounded = Number(pesoNum.toFixed(1));
+    const newWeights = [...weights, { data: label, peso: rounded }];
+    setWeights(newWeights);
+    try {
+      localStorage.setItem(`goteam_weights_${currentUser.id}`, JSON.stringify(newWeights));
+    } catch (e) {
+      console.warn(e);
+    }
+    if (anamneseData) {
+      const updatedAnamnese = { ...anamneseData, weightKg: rounded };
+      setAnamneseData(updatedAnamnese);
+      try {
+        localStorage.setItem('goteam_anamnese_data', JSON.stringify(updatedAnamnese));
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    setIsEditWeightModalOpen(false);
+  };
+
   // Calculate streak
   const calculateStreak = (): number => {
     let streak = 0;
@@ -993,6 +1026,21 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
   const currentWeekIndex = Math.min(selectedWeekNum - 1, detailedPlan.semanas.length - 1);
   const currentDetailedWeek = detailedPlan.semanas[currentWeekIndex] || detailedPlan.semanas[0];
   const todayDetailedWorkout = currentDetailedWeek.dias[dayOfWeekIndex] || currentDetailedWeek.dias[0];
+
+  // Seletor do dia ativo para exibição de APENAS o treino do dia selecionado (inicia em hoje)
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => dayOfWeekIndex);
+  const activeWorkoutOfDay = currentDetailedWeek.dias[selectedDayIndex] || todayDetailedWorkout;
+  const activeWorkoutDateInfo = weekDates[selectedDayIndex] || weekDates[dayOfWeekIndex];
+  const isActiveWorkoutCompleted = activeWorkoutDateInfo ? completedDates.includes(activeWorkoutDateInfo.iso) : false;
+
+  const handleToggleActiveWorkout = () => {
+    if (!activeWorkoutDateInfo) return;
+    if (isActiveWorkoutCompleted) {
+      setCompletedDates(prev => prev.filter(d => d !== activeWorkoutDateInfo.iso));
+    } else {
+      setCompletedDates(prev => [...prev, activeWorkoutDateInfo.iso]);
+    }
+  };
 
   // Current stats calculation
   const treinosPorSemana = currentDetailedWeek.dias.filter(d => d.tipo !== 'Descanso').length;
@@ -1065,6 +1113,28 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
                 <span>🔒</span> Liberar ({detailedPlan.preco})
               </button>
             )}
+
+            {/* Canais Oficiais: Apenas Ícones do WhatsApp e Instagram ao lado do plano */}
+            <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 ml-0.5">
+              <a
+                href={CONTATO_WHATSAPP}
+                target="_blank"
+                rel="noreferrer"
+                title="WhatsApp Oficial do Treinador Leandro"
+                className="w-7 h-7 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center transition shadow-xs hover:scale-110 active:scale-95"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+              </a>
+              <a
+                href={INSTAGRAM_LINK}
+                target="_blank"
+                rel="noreferrer"
+                title="Instagram Oficial @goteamrunning"
+                className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 hover:opacity-90 text-white flex items-center justify-center transition shadow-xs hover:scale-110 active:scale-95"
+              >
+                <Instagram className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -1224,18 +1294,18 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
               </div>
             )}
 
-            {/* NAVEGADOR DE SEMANAS (CARROSSEL DE SEMANAS 1 A N) */}
+            {/* NAVEGADOR DE SEMANAS (8 SEMANAS MAIS ESPAÇADO OCUPANDO A TELA TODA) */}
             <div className="px-5 pt-3 pb-1">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2.5">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                   Semanas do Plano ({detailedPlan.semanasTotal} semanas)
                 </p>
-                <span className="text-xs font-bold text-[#0d3b45]">
-                  Visualizando Semana {selectedWeekNum}
+                <span className="text-xs font-bold text-[#0d3b45] bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                  Semana {selectedWeekNum} de {detailedPlan.semanasTotal}
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 w-full">
                 {Array.from({ length: detailedPlan.semanasTotal }).map((_, i) => {
                   const s = i + 1;
                   const isSelected = s === selectedWeekNum;
@@ -1252,17 +1322,20 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
                           setSelectedWeekNum(s);
                         }
                       }}
-                      className={`flex-none px-3 py-2 rounded-xl text-xs font-bold transition flex flex-col items-center cursor-pointer ${
+                      className={`w-full py-2.5 px-1 rounded-2xl text-center transition flex flex-col items-center justify-center cursor-pointer border ${
                         isSelected
-                          ? 'bg-[#0d3b45] text-white shadow-md ring-2 ring-[#c6f43a]'
+                          ? 'bg-[#0d3b45] text-white shadow-md border-[#c6f43a] ring-2 ring-[#c6f43a]'
                           : isLocked
-                          ? 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                          : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+                          ? 'bg-slate-100 text-slate-400 hover:bg-slate-200 border-slate-200'
+                          : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200 shadow-xs'
                       }`}
+                      title={isLocked ? `Semana ${s} (Bloqueada - requer liberação do plano)` : `Visualizar treinos da Semana ${s}`}
                     >
-                      <span className="text-[10px] uppercase tracking-tight">Sem</span>
-                      <span className="text-sm font-black flex items-center gap-0.5">
-                        {s} {isLocked && <span className="text-[10px]">🔒</span>}
+                      <span className={`text-[10px] uppercase font-bold tracking-tight ${isSelected ? 'text-[#c6f43a]' : 'text-slate-400'}`}>
+                        Sem
+                      </span>
+                      <span className="text-base font-display font-black flex items-center gap-0.5 leading-none mt-0.5">
+                        {s} {isLocked && <span className="text-[11px] text-amber-500">🔒</span>}
                       </span>
                     </button>
                   );
@@ -1313,79 +1386,149 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
               </div>
             </div>
 
-            {/* CARD EM DESTAQUE: TREINO DE HOJE */}
+            {/* SELETOR DO DIA & APENAS O TREINO DO DIA */}
             <div className="px-5 py-2">
-              <div className="bg-[#c6f43a]/15 border-2 border-[#a5cf2a] rounded-2xl p-4 mb-2 shadow-sm">
-                <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Treino do Dia
+                </p>
+                <span className="text-[11px] text-slate-500 font-semibold">
+                  Selecione o dia da semana {selectedWeekNum}
+                </span>
+              </div>
+
+              {/* Botões dos 7 dias para alternar o Treino do Dia */}
+              <div className="grid grid-cols-7 gap-1.5 mb-3 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+                {currentDetailedWeek.dias.map((d, i) => {
+                  const dataInfo = weekDates[i];
+                  const isSelectedDay = i === selectedDayIndex;
+                  const isToday = i === dayOfWeekIndex;
+                  const isDone = dataInfo ? completedDates.includes(dataInfo.iso) : false;
+
+                  return (
+                    <button
+                      key={d.diaAbrev}
+                      onClick={() => setSelectedDayIndex(i)}
+                      className={`py-2 rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer relative ${
+                        isSelectedDay
+                          ? 'bg-[#0d3b45] text-white shadow-sm ring-2 ring-[#c6f43a]'
+                          : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/80'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase leading-none">
+                        {d.diaAbrev}
+                      </span>
+                      <span className={`text-xs font-black mt-1 leading-none ${isSelectedDay ? 'text-[#c6f43a]' : 'text-slate-700'}`}>
+                        {dataInfo ? dataInfo.dayNumber : i + 1}
+                      </span>
+                      {isDone && (
+                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 text-white rounded-full text-[8px] font-black flex items-center justify-center">
+                          ✓
+                        </span>
+                      )}
+                      {isToday && !isSelectedDay && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#a5cf2a] mt-0.5" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* CARD EXCLUSIVO DO TREINO DO DIA SELECIONADO */}
+              <div className="bg-[#c6f43a]/15 border-2 border-[#a5cf2a] rounded-3xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-[#0d3b45] bg-[#c6f43a] px-2 py-0.5 rounded">
-                      Treino de Hoje
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#0d3b45] bg-[#c6f43a] px-2.5 py-1 rounded-lg">
+                      {selectedDayIndex === dayOfWeekIndex ? 'Treino de Hoje' : `Treino de ${activeWorkoutOfDay.dia}`}
                     </span>
-                    <span className="text-xs font-bold text-slate-500">
-                      {todayDetailedWorkout.dia}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      activeWorkoutOfDay.tipo === 'Rodagem Leve'
+                        ? 'bg-teal-50 text-teal-800 border-teal-200'
+                        : activeWorkoutOfDay.tipo === 'Intervalado'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : activeWorkoutOfDay.tipo === 'Ritmo'
+                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                        : activeWorkoutOfDay.tipo === 'Longão'
+                        ? 'bg-lime-200 text-[#0d3b45] border-lime-400 font-black'
+                        : activeWorkoutOfDay.tipo === 'Fortalecimento'
+                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {activeWorkoutOfDay.tipo}
                     </span>
                   </div>
-                  {isTodayCompleted && (
-                    <span className="text-xs font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                      ✓ CONCLUÍDO
+
+                  {isActiveWorkoutCompleted && (
+                    <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300 flex items-center gap-1">
+                      <span>✓</span> CONCLUÍDO
                     </span>
                   )}
                 </div>
 
                 <div className="flex items-baseline justify-between mt-2">
-                  <h4 className="text-base font-black text-[#0d3b45]">
-                    {todayDetailedWorkout.titulo}
+                  <h4 className="text-lg font-display font-black text-[#0d3b45]">
+                    {activeWorkoutOfDay.titulo}
                   </h4>
-                  {todayDetailedWorkout.distanciaKm > 0 && (
-                    <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
-                      {todayDetailedWorkout.distanciaKm} km
+                  {activeWorkoutOfDay.distanciaKm > 0 && (
+                    <span className="text-sm font-black text-emerald-900 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-lg">
+                      {activeWorkoutOfDay.distanciaKm} km
                     </span>
                   )}
                 </div>
 
-                <div className="flex flex-wrap gap-2 text-xs text-slate-600 mt-1">
-                  <span className="font-semibold text-slate-700">Pace Alvo: {todayDetailedWorkout.paceAlvo}</span>
-                  {todayDetailedWorkout.duracaoMin > 0 && <span>• {todayDetailedWorkout.duracaoMin} min aprox.</span>}
-                  <span>• Intensidade: {todayDetailedWorkout.intensidade}</span>
+                <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-700 mt-2 font-medium">
+                  {activeWorkoutOfDay.paceAlvo !== '—' && (
+                    <span className="bg-white/80 px-2 py-0.5 rounded-md border border-slate-200">
+                      <strong>Pace Alvo:</strong> {activeWorkoutOfDay.paceAlvo}
+                    </span>
+                  )}
+                  {activeWorkoutOfDay.duracaoMin > 0 && (
+                    <span className="bg-white/80 px-2 py-0.5 rounded-md border border-slate-200">
+                      <strong>Duração:</strong> ~{activeWorkoutOfDay.duracaoMin} min
+                    </span>
+                  )}
+                  <span className="bg-white/80 px-2 py-0.5 rounded-md border border-slate-200">
+                    <strong>Intensidade:</strong> {activeWorkoutOfDay.intensidade}
+                  </span>
                 </div>
 
-                <p className="text-xs text-slate-700 mt-2 leading-relaxed">
-                  {todayDetailedWorkout.descricao}
+                <p className="text-xs text-slate-700 mt-3 leading-relaxed bg-white/60 p-3 rounded-xl border border-[#a5cf2a]/40">
+                  {activeWorkoutOfDay.descricao}
                 </p>
 
-                {todayDetailedWorkout.dicaTreinador && (
-                  <div className="bg-white/80 border border-[#a5cf2a]/50 rounded-xl p-2.5 mt-2.5 text-[11px] text-[#0d3b45]">
-                    <span className="font-bold">💡 Dica do Treinador: </span>
-                    <span>{todayDetailedWorkout.dicaTreinador}</span>
+                {activeWorkoutOfDay.dicaTreinador && (
+                  <div className="bg-white/90 border border-[#a5cf2a] rounded-xl p-3 mt-3 text-xs text-[#0d3b45]">
+                    <span className="font-bold">💡 Dica do Treinador Leandro: </span>
+                    <span>{activeWorkoutOfDay.dicaTreinador}</span>
                   </div>
                 )}
 
-                <div className="flex flex-col gap-2 mt-3.5">
+                <div className="flex flex-col gap-2.5 mt-4">
                   <button
-                    onClick={handleToggleToday}
-                    className={`w-full py-2.5 px-4 rounded-full text-xs font-bold transition active:scale-95 cursor-pointer ${
-                      isTodayCompleted
+                    onClick={handleToggleActiveWorkout}
+                    className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer ${
+                      isActiveWorkoutCompleted
                         ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                         : 'bg-[#0d3b45] text-white hover:bg-[#082830] shadow-md'
                     }`}
                   >
-                    {isTodayCompleted ? 'Desmarcar conclusão de hoje' : '✓ Marcar como concluído'}
+                    {isActiveWorkoutCompleted ? 'Desmarcar conclusão do treino' : '✓ Marcar como concluído'}
                   </button>
 
-                  {todayDetailedWorkout.tipo !== 'Descanso' && (
+                  {activeWorkoutOfDay.tipo !== 'Descanso' && (
                     <button
                       onClick={() => {
                         onStartLiveWorkout({
-                          id: `live-${todayISO}-${selectedPlanId}`,
-                          dayOfWeek: todayDetailedWorkout.diaAbrev,
-                          title: todayDetailedWorkout.titulo,
-                          type: todayDetailedWorkout.tipo,
-                          distanceKm: todayDetailedWorkout.distanciaKm || 5.0,
-                          estimatedDurationMin: todayDetailedWorkout.duracaoMin || 35,
-                          intensity: todayDetailedWorkout.intensidade,
-                          targetPace: todayDetailedWorkout.paceAlvo !== '—' ? todayDetailedWorkout.paceAlvo : customAthletePace,
-                          description: todayDetailedWorkout.descricao,
-                          steps: todayDetailedWorkout.etapas.map(step => ({
+                          id: `live-${activeWorkoutDateInfo ? activeWorkoutDateInfo.iso : todayISO}-${selectedPlanId}`,
+                          dayOfWeek: activeWorkoutOfDay.diaAbrev,
+                          title: activeWorkoutOfDay.titulo,
+                          type: activeWorkoutOfDay.tipo,
+                          distanceKm: activeWorkoutOfDay.distanciaKm || 5.0,
+                          estimatedDurationMin: activeWorkoutOfDay.duracaoMin || 35,
+                          intensity: activeWorkoutOfDay.intensidade,
+                          targetPace: activeWorkoutOfDay.paceAlvo !== '—' ? activeWorkoutOfDay.paceAlvo : customAthletePace,
+                          description: activeWorkoutOfDay.descricao,
+                          steps: activeWorkoutOfDay.etapas.map(step => ({
                             type: step.tipo,
                             description: step.descricao,
                             durationMinutes: step.duracaoMin,
@@ -1393,181 +1536,14 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
                           }))
                         });
                       }}
-                      className="w-full bg-[#c6f43a] text-[#0d3b45] rounded-full py-3 text-xs font-black uppercase tracking-wider shadow-glow hover:scale-[1.02] active:scale-95 transition cursor-pointer flex items-center justify-center gap-2"
+                      className="w-full bg-[#c6f43a] text-[#0d3b45] rounded-xl py-3 text-xs font-black uppercase tracking-wider shadow-glow hover:scale-[1.02] active:scale-95 transition cursor-pointer flex items-center justify-center gap-2"
                     >
                       <span>▶</span>
-                      <span>Iniciar corrida guiada (áudio e cadência)</span>
+                      <span>Iniciar corrida guiada com áudio e GPS</span>
                     </button>
                   )}
                 </div>
               </div>
-            </div>
-
-            {/* LISTA COMPLETA DOS 7 DIAS DA SEMANA SELECIONADA */}
-            <div className="px-5 pb-2">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Programação Completa — Semana {selectedWeekNum}
-                </p>
-                <span className="text-xs text-slate-500 font-medium">
-                  {treinosFeitosSemana} de {treinosPorSemana} feitos
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-2.5">
-                {currentDetailedWeek.dias.map((d, i) => {
-                  const dataInfo = weekDates[i];
-                  const ehHoje = i === dayOfWeekIndex;
-                  const concluido = dataInfo ? completedDates.includes(dataInfo.iso) : false;
-                  const ehDescanso = d.tipo === 'Descanso';
-
-                  return (
-                    <div
-                      key={d.dia}
-                      className={`rounded-2xl p-4 border transition ${
-                        ehHoje
-                          ? 'bg-[#c6f43a]/15 border-[#a5cf2a] shadow-sm'
-                          : concluido
-                          ? 'bg-slate-50/80 border-slate-200 opacity-80'
-                          : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-black uppercase tracking-wider text-[#0d3b45]">
-                              {d.dia} {dataInfo && `(${dataInfo.dayNumber})`} {ehHoje && '• HOJE'}
-                            </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                d.tipo === 'Rodagem Leve'
-                                  ? 'bg-teal-50 text-teal-700 border-teal-200'
-                                  : d.tipo === 'Intervalado'
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : d.tipo === 'Ritmo'
-                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                  : d.tipo === 'Longão'
-                                  ? 'bg-lime-100 text-[#0d3b45] border-lime-300 font-black'
-                                  : d.tipo === 'Fortalecimento'
-                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                  : 'bg-slate-100 text-slate-500 border-slate-200'
-                              }`}
-                            >
-                              {d.tipo}
-                            </span>
-                          </div>
-
-                          <h5 className="font-bold text-sm text-[#0d3b45] mt-1">
-                            {d.titulo}
-                          </h5>
-
-                          <div className="flex flex-wrap gap-2 text-[11px] text-slate-500 mt-1">
-                            {d.distanciaKm > 0 && <span className="font-bold text-emerald-700">{d.distanciaKm} km</span>}
-                            {d.paceAlvo !== '—' && <span>Pace: {d.paceAlvo}</span>}
-                            {d.duracaoMin > 0 && <span>• {d.duracaoMin} min</span>}
-                          </div>
-
-                          <p className="text-xs text-slate-600 mt-1.5 leading-snug">
-                            {d.descricao}
-                          </p>
-
-                          {d.dicaTreinador && (
-                            <p className="text-[11px] text-slate-500 mt-2 bg-slate-50 p-2 rounded-lg border border-slate-200/60">
-                              <strong className="text-[#0d3b45]">💡 Dica:</strong> {d.dicaTreinador}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col items-center gap-2 flex-none">
-                          <button
-                            onClick={() => {
-                              if (!dataInfo) return;
-                              if (concluido) {
-                                setCompletedDates(prev => prev.filter(x => x !== dataInfo.iso));
-                              } else {
-                                setCompletedDates(prev => [...prev, dataInfo.iso]);
-                              }
-                            }}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition cursor-pointer ${
-                              concluido
-                                ? 'bg-emerald-600 text-white shadow-sm'
-                                : 'border-2 border-slate-300 text-slate-400 hover:border-[#0d3b45]'
-                            }`}
-                            title="Marcar como concluído"
-                          >
-                            {concluido ? '✓' : ''}
-                          </button>
-
-                          {!ehDescanso && (
-                            <button
-                              onClick={() => {
-                                onStartLiveWorkout({
-                                  id: `live-${dataInfo ? dataInfo.iso : 'workout'}-${selectedPlanId}`,
-                                  dayOfWeek: d.diaAbrev,
-                                  title: d.titulo,
-                                  type: d.tipo,
-                                  distanceKm: d.distanciaKm || 5.0,
-                                  estimatedDurationMin: d.duracaoMin || 35,
-                                  intensity: d.intensidade,
-                                  targetPace: d.paceAlvo !== '—' ? d.paceAlvo : customAthletePace,
-                                  description: d.descricao,
-                                  steps: d.etapas.map(step => ({
-                                    type: step.tipo,
-                                    description: step.descricao,
-                                    durationMinutes: step.duracaoMin,
-                                    distanceKm: step.distanciaKm
-                                  }))
-                                });
-                              }}
-                              className="text-[10px] font-bold text-[#0d3b45] bg-[#c6f43a] hover:bg-[#b2dc2b] px-2 py-1 rounded-lg transition cursor-pointer shadow-xs"
-                            >
-                              ▶ Iniciar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Botão Baixar Planilha Completa & Dicas de Viagens */}
-            <div className="px-5 py-6 space-y-3">
-              <a
-                href="#planilha"
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert(`Planilha Go Team ${selectedPlanId} (${detailedPlan.nivelNome} - ${detailedPlan.semanasTotal} semanas): Gerando PDF estruturado da assessoria para impressão!`);
-                }}
-                className="w-full inline-flex items-center justify-center gap-2 bg-[#c6f43a] text-[#0d3b45] rounded-full py-3.5 font-bold shadow-glow hover:scale-105 active:scale-95 transition cursor-pointer text-sm"
-              >
-                ⬇ Baixar planilha completa ({detailedPlan.semanasTotal} semanas em PDF)
-              </a>
-
-              {onOpenTravelMap && (
-                <button
-                  onClick={onOpenTravelMap}
-                  className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl p-3.5 text-left flex items-center justify-between transition cursor-pointer shadow-xs group"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl p-2 rounded-xl bg-white border border-slate-100 shadow-xs">
-                      🗺️
-                    </span>
-                    <div>
-                      <p className="text-xs font-display font-black text-[#0d3b45] group-hover:text-[#a5cf2a] transition">
-                        Dicas de viagens & corridas pelo mundo
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        Provas de 5K, 10K e 21K, logística e dicas do treinador
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-[#0d3b45] bg-[#c6f43a] px-3 py-1 rounded-full group-hover:scale-105 transition">
-                    Explorar
-                  </span>
-                </button>
-              )}
             </div>
           </section>
         )}
@@ -1630,96 +1606,48 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
               </div>
             </div>
 
-            {/* 1. Peso Corporal (Colocado ANTES das atividades recentes) */}
+            {/* 1. Sequência de Treinos (Streak 🔥) */}
             <div className="px-5 pt-4 pb-2">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-slate-500">Peso corporal</p>
-                <span className="text-xs text-slate-400 font-medium">
-                  Último: {weights[weights.length - 1]?.data}
-                </span>
-              </div>
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 shadow-xs">
-                <div className="flex items-baseline justify-between mb-1">
+              <p className="text-sm font-semibold text-slate-500 mb-2">Sequência de treinos</p>
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-3xl">🔥</span>
                   <div>
-                    <span className="text-3xl font-display font-black text-[#0d3b45]">
-                      {weights[weights.length - 1]?.peso.toFixed(1)}
-                    </span>
-                    <span className="text-sm text-slate-500 font-semibold"> kg</span>
+                    <p className="text-2xl font-display font-black text-[#0d3b45] leading-tight">
+                      {calculateStreak()} {calculateStreak() === 1 ? 'dia' : 'dias'}
+                    </p>
+                    <p className="text-[11px] text-slate-500">seguidos mantendo a rotina ativa</p>
                   </div>
-                  <span className="text-xs text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded-full">
-                    Acompanhamento ativo
-                  </span>
                 </div>
 
-                {/* Gráfico de Linha SVG do Peso */}
-                <div className="my-3 w-full h-24 bg-white rounded-xl p-2 border border-slate-200/80 flex items-center">
-                  <svg viewBox="0 0 300 80" className="w-full h-full overflow-visible">
-                    {(() => {
-                      const pts = weights.slice(-6);
-                      if (pts.length < 2) return null;
-                      const minP = Math.min(...pts.map(p => p.peso)) - 0.5;
-                      const maxP = Math.max(...pts.map(p => p.peso)) + 0.5;
-                      const range = maxP - minP || 1;
+                {/* Indicador dos dias da semana D S T Q Q S S */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                  {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((letra, idx) => {
+                    const d = new Date(today);
+                    d.setDate(today.getDate() - today.getDay() + idx);
+                    const iso = d.toISOString().split('T')[0];
+                    const treinou = completedDates.includes(iso);
 
-                      const coords = pts.map((p, idx) => {
-                        const x = (idx / (pts.length - 1)) * 280 + 10;
-                        const y = 70 - ((p.peso - minP) / range) * 55;
-                        return { x, y, ...p };
-                      });
-
-                      const pathD = coords.reduce((acc, c, idx) => {
-                        return idx === 0 ? `M ${c.x} ${c.y}` : `${acc} L ${c.x} ${c.y}`;
-                      }, '');
-
-                      return (
-                        <>
-                          <path d={pathD} fill="none" stroke="#0d3b45" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                          {coords.map((c, idx) => (
-                            <g key={idx}>
-                              <circle cx={c.x} cy={c.y} r="4" fill="#c6f43a" stroke="#0d3b45" strokeWidth="2" />
-                              <text x={c.x} y={c.y - 7} fontSize="8" fontWeight="bold" textAnchor="middle" fill="#0d3b45">
-                                {c.peso}
-                              </text>
-                            </g>
-                          ))}
-                        </>
-                      );
-                    })()}
-                  </svg>
+                    return (
+                      <div key={idx} className="flex flex-col items-center gap-1">
+                        <span className="text-[10px] font-bold text-slate-400">{letra}</span>
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                            treinou
+                              ? 'bg-[#c6f43a] text-[#0d3b45] shadow-sm font-black'
+                              : 'bg-slate-200 text-slate-400'
+                          }`}
+                        >
+                          {treinou ? '✓' : ''}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-
-                <button
-                  onClick={() => setIsWeightFormOpen(!isWeightFormOpen)}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0d3b45] text-white px-4 py-2.5 text-sm font-bold hover:bg-[#082830] transition cursor-pointer"
-                >
-                  {isWeightFormOpen ? 'Fechar' : '+ Registrar novo peso'}
-                </button>
-
-                {isWeightFormOpen && (
-                  <form onSubmit={handleSaveWeight} className="mt-3 flex gap-2">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="30"
-                      max="250"
-                      required
-                      placeholder="Ex: 74.8"
-                      value={newPeso}
-                      onChange={(e) => setNewPeso(e.target.value)}
-                      className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-[#c6f43a]"
-                    />
-                    <button
-                      type="submit"
-                      className="rounded-xl bg-[#c6f43a] text-[#0d3b45] px-5 py-2 text-sm font-bold hover:scale-105 active:scale-95 transition cursor-pointer"
-                    >
-                      Salvar
-                    </button>
-                  </form>
-                )}
               </div>
             </div>
 
-            {/* 2. Recentes & Adicionar Atividade (Depois do peso corporal) */}
+            {/* 2. Atividades Recentes (com Strava, Garmin e Adicionar Corrida) */}
             <div className="px-5 py-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold text-slate-500">Atividades Recentes</p>
@@ -1831,47 +1759,6 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
               </div>
             </div>
 
-            {/* 3. Sequência de Treinos (Streak 🔥) */}
-            <div className="px-5 pb-5">
-              <p className="text-sm font-semibold text-slate-500 mb-2">Sequência de treinos</p>
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-3xl">🔥</span>
-                  <div>
-                    <p className="text-2xl font-display font-black text-[#0d3b45] leading-tight">
-                      {calculateStreak()} {calculateStreak() === 1 ? 'dia' : 'dias'}
-                    </p>
-                    <p className="text-[11px] text-slate-500">seguidos mantendo a rotina ativa</p>
-                  </div>
-                </div>
-
-                {/* Indicador dos dias da semana D S T Q Q S S */}
-                <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                  {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((letra, idx) => {
-                    const d = new Date(today);
-                    d.setDate(today.getDate() - today.getDay() + idx);
-                    const iso = d.toISOString().split('T')[0];
-                    const treinou = completedDates.includes(iso);
-
-                    return (
-                      <div key={idx} className="flex flex-col items-center gap-1">
-                        <span className="text-[10px] font-bold text-slate-400">{letra}</span>
-                        <div
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                            treinou
-                              ? 'bg-[#c6f43a] text-[#0d3b45] shadow-sm font-black'
-                              : 'bg-slate-200 text-slate-400'
-                          }`}
-                        >
-                          {treinou ? '✓' : ''}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
             {/* 4. Desafios e Medalhas da Assessoria */}
             <div className="px-5 pb-5">
               <div className="flex items-center justify-between mb-2">
@@ -1943,289 +1830,161 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
         )}
 
         {/* ========================================================
-            ABA 3: EVOLUIR
+            ABA: CADASTRO
+            Ficha Cadastral Oficial do Aluno
         ======================================================== */}
-        {activeTab === 'evoluir' && (
+        {activeTab === 'cadastro' && (
           <section className="animate-fadeIn">
-            {/* Header */}
+            {/* Header da Ficha Cadastral */}
             <div className="bg-[#0d3b45] text-white px-5 pt-6 pb-6 shadow-sm">
-              <p className="text-xs text-white/70 font-semibold uppercase tracking-wider mb-1">
-                Seu próximo passo
-              </p>
-              <p className="text-2xl font-display font-black uppercase">
-                Próximos desafios atléticos
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-white/70 font-semibold uppercase tracking-wider">
+                  Matrícula Oficial Go Team
+                </p>
+                <span className="text-[10px] font-black text-[#0d3b45] bg-[#c6f43a] px-2.5 py-0.5 rounded-full uppercase shadow-xs">
+                  Ativo
+                </span>
+              </div>
+              <h2 className="text-2xl font-display font-black uppercase">
+                Ficha Cadastral do Aluno
+              </h2>
+              <p className="text-xs text-white/80 mt-0.5">
+                Dados cadastrais oficiais registrados para prescrição de treinos e acompanhamento.
               </p>
             </div>
 
             <div className="px-5 py-5">
-              {/* Card Plano Atual */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 mb-5">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">
-                  Plano atual
-                </p>
-                <p className="text-lg font-display font-black text-[#0d3b45]">
-                  Plano {plan.id} — {plan.nome} ({detailedPlan.semanasTotal} semanas)
-                </p>
-                <div className="bg-slate-200 rounded-full h-2.5 mt-3 overflow-hidden">
-                  <div
-                    className="bg-[#c6f43a] h-full rounded-full transition-all"
-                    style={{ width: `${Math.round((selectedWeekNum / detailedPlan.semanasTotal) * 100)}%` }}
-                  />
-                </div>
-                <p className="text-xs text-slate-500 mt-2 font-medium">
-                  Semana {selectedWeekNum} de {detailedPlan.semanasTotal} • Faltam {detailedPlan.semanasTotal - selectedWeekNum} semanas para a formatura da distância!
-                </p>
-              </div>
-
-              {/* Recomendado para você */}
-              {selectedPlanId !== '21K' ? (
-                <div className="rounded-3xl p-6 mb-5 bg-[#0d3b45] text-white shadow-elegant">
-                  <span className="inline-block bg-[#c6f43a] text-[#0d3b45] text-[11px] font-black uppercase tracking-wider px-3 py-1 rounded-full mb-3">
-                    Recomendado para você
-                  </span>
-                  <p className="text-3xl font-display font-black mb-1">
-                    {selectedPlanId === '5K' ? '10K — Evolução' : '21K — Meia Maratona'}
-                  </p>
-                  <p className="text-sm text-white/80 mb-5 font-sans leading-relaxed">
-                    {selectedPlanId === '5K'
-                      ? 'Depois de dominar os 5K sem parar, o próximo salto natural é dobrar a quilometragem e ganhar cadência com treinos intervalados.'
-                      : 'Você já corre 10K com conforto! O desafio lendário dos 21K exige long runs progressivos e estratégia de ritmo refinada.'}
-                  </p>
-                  <button
-                    onClick={() => {
-                      const nextPlan = selectedPlanId === '5K' ? '10K' : '21K';
-                      setSelectedPlanId(nextPlan);
-                      alert(`Parabéns! Você evoluiu para o Plano Go Team ${nextPlan}! Treinos atualizados na aba Treinos.`);
-                    }}
-                    className="w-full inline-flex items-center justify-center bg-[#c6f43a] text-[#0d3b45] rounded-full py-3.5 text-sm font-black shadow-glow hover:scale-105 active:scale-95 transition cursor-pointer"
-                  >
-                    Quero evoluir para {selectedPlanId === '5K' ? '10K' : '21K'} →
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 text-center mb-5">
-                  <p className="text-4xl mb-2">🏆</p>
-                  <p className="text-lg font-display font-black text-[#0d3b45] mb-1">
-                    Você chegou ao topo dos 21K!
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    Você está no plano mais avançado da Go Team. Bora manter a consistência e buscar recordes pessoais!
-                  </p>
-                </div>
-              )}
-
-              {/* Grade de Todos os Planos */}
-              <p className="text-sm font-semibold text-slate-500 mb-2">Todos os planos</p>
-              <div className="flex flex-col gap-3 mb-6">
-                {(['5K', '10K', '21K'] as const).map((pid) => {
-                  const p = GOTEAM_PLANOS[pid];
-                  const isCurrent = pid === selectedPlanId;
-
-                  return (
-                    <div
-                      key={pid}
-                      className={`p-4 rounded-2xl border transition flex items-center justify-between ${
-                        isCurrent
-                          ? 'bg-[#c6f43a]/15 border-[#a5cf2a]'
-                          : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-display font-black text-xl text-[#0d3b45]">
-                            {p.id} — {p.nome}
-                          </span>
-                          {isCurrent && (
-                            <span className="bg-[#0d3b45] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              Ativo
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {p.semanas} semanas • {p.preco}
-                        </p>
-                      </div>
-
-                      {!isCurrent && (
-                        <button
-                          onClick={() => {
-                            setSelectedPlanId(pid);
-                            alert(`Plano alterado para ${pid}!`);
-                          }}
-                          className="text-xs font-bold bg-[#0d3b45] text-white px-4 py-2 rounded-full hover:bg-[#082830] transition cursor-pointer"
-                        >
-                          Ativar
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Módulo de Sincronização Real e Conexão de Dispositivos (Aba Evoluir) */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-slate-500">Sincronização com Dispositivos</p>
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Conexão Ativa
-                  </span>
-                </div>
-
-                <div className="bg-gradient-to-br from-slate-900 to-[#0d3b45] text-white rounded-2xl p-4 shadow-sm border border-slate-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-[#c6f43a] text-[#0d3b45] flex items-center justify-center font-black text-lg shadow-sm">
-                        ⚡
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-white leading-tight">
-                          Sincronização Instantânea
-                        </p>
-                        <p className="text-[11px] text-white/70">
-                          {lastSyncTime ? `Última sinc: ${lastSyncTime}` : 'Pronto para sincronizar'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handlePerformLiveSync('Strava')}
-                      disabled={isDirectSyncing}
-                      className="inline-flex items-center gap-1.5 text-xs font-black bg-[#c6f43a] text-[#0d3b45] px-3.5 py-1.5 rounded-full hover:scale-105 active:scale-95 transition disabled:opacity-50 cursor-pointer shadow-sm"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isDirectSyncing ? 'animate-spin' : ''}`} />
-                      {isDirectSyncing ? 'Sincronizando...' : 'Sincronizar agora'}
-                    </button>
-                  </div>
-
-                  {/* Feedback da Sincronização */}
-                  {syncFeedback && (
-                    <div className="bg-emerald-500/20 border border-emerald-400/40 rounded-xl p-3 mb-3 text-xs text-emerald-200 flex items-start gap-2 animate-fadeIn">
-                      <CheckCircle2 className="w-4 h-4 text-[#c6f43a] shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="font-bold text-[#c6f43a]">Atividade Registrada!</p>
-                        <p className="text-white/90 leading-relaxed mt-0.5">{syncFeedback}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Dispositivos Pareados com Ação Direta */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                    <button
-                      onClick={() => setIsSyncModalOpen(true)}
-                      className="bg-white/10 hover:bg-white/20 border border-sky-400/40 rounded-xl p-2.5 text-left transition flex flex-col justify-between cursor-pointer group shadow-xs"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Bluetooth className="w-4 h-4 text-sky-300" />
-                        <span className="text-[9px] font-bold text-sky-300 bg-sky-950/80 px-1.5 py-0.5 rounded">BLE</span>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white group-hover:text-sky-300 transition">Bluetooth</p>
-                        <p className="text-[10px] text-white/60">Parear Relógio</p>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => handlePerformLiveSync('Strava')}
-                      disabled={isDirectSyncing}
-                      className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl p-2.5 text-left transition flex flex-col justify-between cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-lg">⚡</span>
-                        <span className="text-[9px] font-bold text-emerald-300 bg-emerald-950/60 px-1.5 py-0.5 rounded">Ativo</span>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white group-hover:text-[#c6f43a] transition">Strava</p>
-                        <p className="text-[10px] text-white/60">Importar corrida</p>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => handlePerformLiveSync('Garmin')}
-                      disabled={isDirectSyncing}
-                      className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl p-2.5 text-left transition flex flex-col justify-between cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Watch className="w-4 h-4 text-[#c6f43a]" />
-                        <span className="text-[9px] font-bold text-emerald-300 bg-emerald-950/60 px-1.5 py-0.5 rounded">Pareado</span>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white group-hover:text-[#c6f43a] transition">Garmin Connect</p>
-                        <p className="text-[10px] text-white/60">Buscar relógio</p>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => handlePerformLiveSync('Apple Health')}
-                      disabled={isDirectSyncing}
-                      className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl p-2.5 text-left transition flex flex-col justify-between cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Smartphone className="w-4 h-4 text-emerald-300" />
-                        <span className="text-[9px] font-bold text-emerald-300 bg-emerald-950/60 px-1.5 py-0.5 rounded">Pronto</span>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white group-hover:text-[#c6f43a] transition">Apple Saúde</p>
-                        <p className="text-[10px] text-white/60">Sincronizar</p>
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* Upload Real de Arquivo GPX / FIT */}
-                  <label className="border-2 border-dashed border-white/20 hover:border-[#c6f43a] bg-black/20 hover:bg-black/30 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition text-xs text-white/80 font-medium">
-                    <Upload className="w-4 h-4 text-[#c6f43a]" />
-                    <span>Importar arquivo <strong>.GPX</strong> ou <strong>.FIT</strong> do treino</span>
-                    <input
-                      type="file"
-                      accept=".gpx,.tcx,.fit,.json"
-                      onChange={handleDirectFileUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Ferramentas de Desempenho e Tecnologia Go Team */}
-              <p className="text-sm font-semibold text-slate-500 mb-2">Ferramentas de Desempenho</p>
-              <div className="space-y-3">
-                <div
-                  onClick={() => setIsPaceModalOpen(true)}
-                  className="bg-white border-2 border-slate-200 hover:border-[#a5cf2a] rounded-2xl p-4 transition cursor-pointer shadow-sm flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-[#c6f43a]/20 text-[#0d3b45] flex items-center justify-center text-2xl group-hover:scale-110 transition">
-                      ⚡
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm text-slate-800">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-14 h-14 rounded-2xl bg-[#0d3b45] text-[#c6f43a] flex items-center justify-center font-display font-black text-2xl shadow-sm flex-none">
+                      {athleteProfile.name ? athleteProfile.name.slice(0, 2).toUpperCase() : 'AL'}
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-[#0d3b45] group-hover:text-[#a5cf2a] transition">
-                        Calculadora de Pace & Zonas
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        Zonas Z1 a Z5, previsões de prova (5K a 42K) e ritmo base
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-display font-black text-[#0d3b45] uppercase tracking-tight">
+                          {athleteProfile.name}
+                        </h3>
+                        <span className="text-[10px] font-black bg-[#c6f43a] text-[#0d3b45] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Aluno Oficial
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                        <span>Matrícula #{currentUser.id.replace(/\D/g, '').slice(-4) || '2026'}</span>
+                        <span>•</span>
+                        <span>Ingresso em {athleteProfile.joinedDate}</span>
                       </p>
                     </div>
                   </div>
-                  <span className="text-sm font-bold text-[#0d3b45] group-hover:translate-x-1 transition">›</span>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => setIsEditProfileModalOpen(true)}
+                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:border-[#a5cf2a] hover:bg-slate-50 text-[#0d3b45] transition cursor-pointer shadow-xs"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-[#a5cf2a]" />
+                      <span>Editar Dados</span>
+                    </button>
+                    <button
+                      onClick={() => setIsEditProfileModalOpen(true)}
+                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#0d3b45] hover:bg-[#082830] text-white transition cursor-pointer shadow-xs"
+                    >
+                      <User className="w-3.5 h-3.5 text-[#c6f43a]" />
+                      <span>Trocar / Novo Aluno</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div
-                  onClick={() => setIsSyncModalOpen(true)}
-                  className="bg-white border-2 border-slate-200 hover:border-[#FC4C02] rounded-2xl p-4 transition cursor-pointer shadow-sm flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 text-[#FC4C02] flex items-center justify-center text-2xl group-hover:scale-110 transition">
-                      🔗
-                    </div>
+                {/* Grid com Dados do Cadastro Oficial */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4">
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1">
+                      <Mail className="w-3.5 h-3.5 text-slate-400" />
+                      E-mail Cadastrado
+                    </p>
+                    <p className="text-sm font-bold text-[#0d3b45] truncate" title={athleteProfile.email}>
+                      {athleteProfile.email}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1">
+                      <Phone className="w-3.5 h-3.5 text-emerald-500" />
+                      WhatsApp / Celular
+                    </p>
+                    <p className="text-sm font-bold text-[#0d3b45]">
+                      {athleteProfile.phone}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                      Cidade / Estado
+                    </p>
+                    <p className="text-sm font-bold text-[#0d3b45] truncate">
+                      {athleteProfile.city}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5 text-teal-500" />
+                      Idade & Sexo
+                    </p>
+                    <p className="text-sm font-bold text-[#0d3b45]">
+                      {athleteProfile.age} anos • {athleteProfile.gender === 'M' ? 'Masculino' : athleteProfile.gender === 'F' ? 'Feminino' : 'Outro'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3">
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Pelotão de Ritmo</p>
+                    <p className="text-sm font-black text-[#0d3b45]">Pelotão {athleteProfile.paceGroup}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Grupo por tempo alvo</p>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Nível na Assessoria</p>
+                    <p className="text-sm font-bold text-emerald-700 capitalize">{athleteProfile.runningLevel}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Metodologia Go Team</p>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100 flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-bold text-[#0d3b45] group-hover:text-[#FC4C02] transition">
-                        Central Avançada de Sensores & Relógios
+                      <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Treinador Responsável</p>
+                      <p className="text-xs font-bold text-[#0d3b45]">Leandro Irineu da Silva</p>
+                      <p className="text-[10px] text-slate-500">CREF 042891-G/SP</p>
+                    </div>
+                    <a
+                      href={CONTATO_WHATSAPP}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] bg-emerald-500 text-white px-3 py-1.5 rounded-full font-bold hover:bg-emerald-600 transition shadow-xs flex items-center gap-1"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      <span>WhatsApp</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* Card de Status da Matrícula */}
+                <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent border border-emerald-300/40 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📋</span>
+                    <div>
+                      <p className="text-xs font-bold text-[#0d3b45] uppercase tracking-wide">
+                        Status da Matrícula na Assessoria
                       </p>
-                      <p className="text-xs text-slate-500">
-                        Opções avançadas de conexão por bluetooth, polar e coros
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        Plano Ativo: <strong>{selectedPlanId}</strong> • {detailedPlan.semanasTotal} semanas de periodização com acompanhamento
                       </p>
                     </div>
                   </div>
-                  <span className="text-sm font-bold text-[#0d3b45] group-hover:translate-x-1 transition">›</span>
+                  <span className="text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-full">
+                    Regular
+                  </span>
                 </div>
               </div>
             </div>
@@ -2306,24 +2065,42 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
                     </button>
                   </div>
 
-                  {/* 4 Métricas Rápidas do Aluno na Assessoria */}
-                  <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-white/10">
-                    <div className="bg-white/5 rounded-xl py-1.5 px-1 border border-white/5">
+                  {/* 5 Métricas Rápidas do Aluno na Assessoria: Treinos, Semanas, Streak, Medalhas e Peso Corporal Editável */}
+                  <div className="grid grid-cols-5 gap-1.5 text-center pt-2 border-t border-white/10">
+                    <div className="bg-white/5 rounded-xl py-1.5 px-0.5 border border-white/5">
                       <p className="text-base font-black text-white">{totalTreinosFeitos}</p>
                       <p className="text-[9px] uppercase font-bold text-white/60">Treinos</p>
                     </div>
-                    <div className="bg-white/5 rounded-xl py-1.5 px-1 border border-white/5">
-                      <p className="text-base font-black text-[#c6f43a]">{currentUser.currentWeeklyKm} km</p>
+                    <div className="bg-white/5 rounded-xl py-1.5 px-0.5 border border-white/5">
+                      <p className="text-base font-black text-[#c6f43a]">{currentUser.currentWeeklyKm}k</p>
                       <p className="text-[9px] uppercase font-bold text-white/60">Semana</p>
                     </div>
-                    <div className="bg-white/5 rounded-xl py-1.5 px-1 border border-white/5">
-                      <p className="text-base font-black text-amber-300">{streakDays} dias</p>
+                    <div className="bg-white/5 rounded-xl py-1.5 px-0.5 border border-white/5">
+                      <p className="text-base font-black text-amber-300">{streakDays}d</p>
                       <p className="text-[9px] uppercase font-bold text-white/60">Streak 🔥</p>
                     </div>
-                    <div className="bg-white/5 rounded-xl py-1.5 px-1 border border-white/5">
+                    <div className="bg-white/5 rounded-xl py-1.5 px-0.5 border border-white/5">
                       <p className="text-base font-black text-white">{unlockedBadgesCount}</p>
                       <p className="text-[9px] uppercase font-bold text-white/60">Medalhas 🏆</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditWeightValue(String(currentAthleteWeight));
+                        setIsEditWeightModalOpen(true);
+                      }}
+                      title="Clique para editar seu peso corporal"
+                      className="bg-white/10 hover:bg-white/20 active:scale-95 transition rounded-xl py-1.5 px-0.5 border border-[#c6f43a]/40 group cursor-pointer"
+                    >
+                      <div className="flex items-center justify-center gap-0.5">
+                        <p className="text-base font-black text-[#c6f43a] group-hover:underline">{currentAthleteWeight}</p>
+                        <span className="text-[9px] text-[#c6f43a] font-bold">kg</span>
+                      </div>
+                      <p className="text-[9px] uppercase font-bold text-[#c6f43a] flex items-center justify-center gap-0.5">
+                        <span>Peso</span>
+                        <Edit3 className="w-2.5 h-2.5 text-[#c6f43a]" />
+                      </p>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2565,299 +2342,80 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
               </div>
             </div>
 
-            {/* ==================== DADOS CADASTRAIS DO ATLETA (LOGIN / CADASTRO) ==================== */}
-            <div className="px-5 pt-4 pb-2">
-              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm text-slate-800">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-[#0d3b45] text-[#c6f43a] flex items-center justify-center font-display font-black text-xl shadow-sm flex-none">
-                      <UserCheck className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-display font-black text-[#0d3b45] uppercase tracking-tight">
-                          Ficha Cadastral do Aluno
-                        </h3>
-                        <span className="text-[10px] font-black bg-[#c6f43a] text-[#0d3b45] px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Dados Oficiais
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                        <span className="font-semibold text-slate-700">{athleteProfile.name}</span>
-                        <span>•</span>
-                        <span>Matrícula #{currentUser.id.replace(/\D/g, '').slice(-4) || '2026'}</span>
-                        <span>•</span>
-                        <span>Desde {athleteProfile.joinedDate}</span>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <button
-                      onClick={() => setIsEditProfileModalOpen(true)}
-                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:border-[#a5cf2a] hover:bg-slate-50 text-[#0d3b45] transition cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5 text-[#a5cf2a]" />
-                      <span>Editar Dados</span>
-                    </button>
-                    <button
-                      onClick={() => setIsEditProfileModalOpen(true)}
-                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#0d3b45] hover:bg-[#082830] text-white transition cursor-pointer"
-                    >
-                      <User className="w-3.5 h-3.5 text-[#c6f43a]" />
-                      <span>Trocar / Novo Aluno</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Grid com Dados do Cadastro no Login */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
-                  <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5 flex items-center gap-1">
-                      <Mail className="w-3 h-3 text-slate-400" />
-                      E-mail Cadastrado
-                    </p>
-                    <p className="text-xs font-bold text-[#0d3b45] truncate" title={athleteProfile.email}>
-                      {athleteProfile.email}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5 flex items-center gap-1">
-                      <Phone className="w-3 h-3 text-emerald-500" />
-                      WhatsApp / Celular
-                    </p>
-                    <p className="text-xs font-bold text-[#0d3b45]">
-                      {athleteProfile.phone}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5 flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-rose-400" />
-                      Cidade / Estado
-                    </p>
-                    <p className="text-xs font-bold text-[#0d3b45] truncate">
-                      {athleteProfile.city}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5 flex items-center gap-1">
-                      <UserCheck className="w-3 h-3 text-teal-500" />
-                      Idade & Sexo
-                    </p>
-                    <p className="text-xs font-bold text-[#0d3b45]">
-                      {athleteProfile.age} anos • {athleteProfile.gender === 'M' ? 'Masculino' : athleteProfile.gender === 'F' ? 'Feminino' : 'Outro'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2.5">
-                  <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Pelotão de Ritmo</p>
-                    <p className="text-xs font-black text-[#0d3b45]">Pelotão {athleteProfile.paceGroup}</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Nível na Assessoria</p>
-                    <p className="text-xs font-bold text-emerald-700 capitalize">{athleteProfile.runningLevel}</p>
-                  </div>
-                  <div className="col-span-2 sm:col-span-1 bg-slate-50 rounded-2xl p-3 border border-slate-100 flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Treinador Head Coach</p>
-                      <p className="text-xs font-bold text-[#0d3b45]">Leandro Irineu da Silva</p>
-                    </div>
-                    <a
-                      href={CONTATO_WHATSAPP}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] bg-emerald-500 text-white px-3 py-1 rounded-full font-bold hover:bg-emerald-600 transition shadow-xs"
-                    >
-                      WhatsApp
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* ==================== AVALIAÇÃO FÍSICA & QUESTIONÁRIO ANAMNESE ==================== */}
-            <div className="px-5 pt-2 pb-2">
-              {anamneseData ? (
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50/50 rounded-3xl p-5 border border-emerald-200 shadow-xs">
+            {/* ==================== AVALIAÇÃO FÍSICA & QUESTIONÁRIO ANAMNESE (EXCLUSIVO LOGIN TREINADOR LEANDRO starvinzs@gmail.com) ==================== */}
+            {isCoach && (
+              <div className="px-5 pt-4 pb-2">
+                <div className="bg-gradient-to-br from-emerald-500/10 via-[#0d3b45]/40 to-[#082830] rounded-3xl p-5 border-2 border-emerald-400/40 shadow-sm text-white">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold shadow-xs flex-none">
-                        ✓
+                      <div className="w-10 h-10 rounded-2xl bg-[#c6f43a] text-[#0d3b45] flex items-center justify-center font-black text-xl shadow-xs flex-none">
+                        👨‍🏫
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-display font-black uppercase tracking-wider text-[#0d3b45]">
-                            Avaliação Física & Anamnese Esportiva
+                          <h4 className="text-sm font-display font-black uppercase tracking-wider text-[#c6f43a]">
+                            Painel de Anamnese & Avaliação Física (Área do Treinador)
                           </h4>
-                          <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
-                            Calibrada
+                          <span className="text-[10px] font-black bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 px-2 py-0.5 rounded-full">
+                            Coach starvinzs@gmail.com
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500">
-                          Preenchida em {new Date(anamneseData.submittedAt).toLocaleDateString('pt-BR')} • Dados integrados aos seus treinos
+                        <p className="text-[11px] text-white/70">
+                          {anamneseData
+                            ? `Calibrada em ${new Date(anamneseData.submittedAt).toLocaleDateString('pt-BR')} • Dados integrados à planilha do aluno`
+                            : 'Anamnese pendente de envio pelo aluno. Você pode preencher ou calibrar manualmente.'}
                         </p>
                       </div>
                     </div>
 
                     <button
                       onClick={() => setIsAnamneseModalOpen(true)}
-                      className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 transition cursor-pointer shadow-xs whitespace-nowrap"
+                      className="px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider bg-[#c6f43a] text-[#0d3b45] hover:bg-[#b8e432] transition cursor-pointer shadow-md whitespace-nowrap"
                     >
-                      Revisar / Atualizar Anamnese
+                      {anamneseData ? 'Revisar / Calibrar Anamnese' : 'Preencher Avaliação Física'}
                     </button>
                   </div>
 
-                  {/* Resumo Biométrico e PAR-Q */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                    <div className="bg-white/85 rounded-2xl p-2.5 border border-emerald-100">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Biometria</span>
-                      <p className="font-bold text-[#0d3b45] mt-0.5">
-                        {anamneseData.heightCm} cm • {anamneseData.weightKg} kg
-                      </p>
-                      <p className="text-[10px] text-emerald-600 font-semibold">
-                        IMC: {(anamneseData.weightKg / ((anamneseData.heightCm / 100) * (anamneseData.heightCm / 100))).toFixed(1)} kg/m²
-                      </p>
-                    </div>
-
-                    <div className="bg-white/85 rounded-2xl p-2.5 border border-emerald-100">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">PAR-Q Cardíaco</span>
-                      <p className="font-bold text-emerald-700 mt-0.5">
-                        {!anamneseData.parqHeartIssue && !anamneseData.parqChestPain ? '✓ Sem Restrições' : '⚠️ Sob Monitoramento'}
-                      </p>
-                      <p className="text-[10px] text-slate-500">Liberação para esforço</p>
-                    </div>
-
-                    <div className="bg-white/85 rounded-2xl p-2.5 border border-emerald-100">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Histórico Articular</span>
-                      <p className="font-bold text-[#0d3b45] mt-0.5 truncate" title={anamneseData.injuriesHistory.join(', ')}>
-                        {anamneseData.injuriesHistory.length > 0 ? anamneseData.injuriesHistory.join(', ') : 'Nenhuma lesão'}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{anamneseData.strengthTraining}</p>
-                    </div>
-
-                    <div className="bg-white/85 rounded-2xl p-2.5 border border-emerald-100">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Rotina & Frequência</span>
-                      <p className="font-bold text-[#0d3b45] mt-0.5">
-                        {anamneseData.weeklyAvailabilityDays} dias por semana
-                      </p>
-                      <p className="text-[10px] text-slate-500">{anamneseData.preferredTimeOfDay}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent rounded-3xl p-5 border-2 border-amber-300/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xl flex-none shadow-sm">
-                      !
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-display font-black text-[#0d3b45] uppercase tracking-wide">
-                        Questionário de Avaliação Física Pendente
-                      </h4>
-                      <p className="text-xs text-slate-600 mt-0.5 max-w-md leading-relaxed">
-                        Preencha sua anamnese com altura, peso, histórico de saúde e lesões para que o{' '}
-                        <strong>Treinador Leandro Irineu</strong> calibre os ritmos e as zonas cardíacas da sua planilha.
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setIsAnamneseModalOpen(true)}
-                    className="w-full sm:w-auto bg-[#c6f43a] hover:bg-[#b8e432] text-[#0d3b45] px-5 py-3 rounded-full text-xs font-display font-black uppercase tracking-wider transition shadow-glow cursor-pointer whitespace-nowrap"
-                  >
-                    Preencher Avaliação Física Agora →
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Resumo de Conquistas do Atleta */}
-            <div className="px-5 pt-4 pb-1">
-              <div
-                onClick={() => setActiveTab('progresso')}
-                className="bg-[#0d3b45] text-white rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:brightness-110 transition shadow-sm"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">🏆</span>
-                  <div>
-                    <p className="text-[11px] font-bold text-[#c6f43a] uppercase tracking-wider">Conquistas da Assessoria</p>
-                    <p className="text-base font-display font-black text-white">
-                      {unlockedBadgesCount} de {achievements.length} medalhas conquistadas
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-[#c6f43a] bg-white/10 px-3 py-1 rounded-full">
-                  Ver todas →
-                </span>
-              </div>
-            </div>
-
-            {/* Cartão de Assinatura & Planilhas Compradas */}
-            <div className="px-5 pt-3 pb-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Planilhas & Acesso</p>
-                <span className="text-xs text-slate-400 font-medium">Assessoria Go Team</span>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {(['5K', '10K', '21K'] as PlanDistance[]).map(dist => {
-                  const isPaid = Boolean(paidPlans[dist]);
-                  const isCurrent = dist === selectedPlanId;
-                  const distDetailed = getDetailedPlan(dist, selectedLevel);
-
-                  return (
-                    <div
-                      key={dist}
-                      className={`rounded-2xl p-3.5 border transition flex items-center justify-between shadow-xs ${
-                        isCurrent
-                          ? 'bg-[#c6f43a]/15 border-[#a5cf2a]'
-                          : 'bg-slate-50 border-slate-200'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-display font-black text-[#0d3b45]">
-                            Planilha {dist}
-                          </p>
-                          {isCurrent && (
-                            <span className="text-[10px] bg-[#0d3b45] text-[#c6f43a] font-black px-2 py-0.5 rounded">
-                              Selecionado
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          {distDetailed.semanasTotal} semanas • {distDetailed.treinosPorSemana}x por semana ({distDetailed.preco})
+                  {anamneseData && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs pt-1">
+                      <div className="bg-black/30 rounded-2xl p-2.5 border border-white/10">
+                        <span className="text-[10px] text-white/50 uppercase font-bold block">Biometria</span>
+                        <p className="font-bold text-white mt-0.5">
+                          {anamneseData.heightCm} cm • {anamneseData.weightKg} kg
+                        </p>
+                        <p className="text-[10px] text-[#c6f43a] font-semibold">
+                          IMC: {(anamneseData.weightKg / ((anamneseData.heightCm / 100) * (anamneseData.heightCm / 100))).toFixed(1)} kg/m²
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {isPaid ? (
-                          <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-300">
-                            ✓ Liberado
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setPaymentModalDistance(dist);
-                              setIsPaymentModalOpen(true);
-                            }}
-                            className="bg-[#c6f43a] text-[#0d3b45] font-black text-xs px-3 py-1 rounded-full hover:scale-105 active:scale-95 transition cursor-pointer shadow-xs"
-                          >
-                            Liberar ({distDetailed.preco})
-                          </button>
-                        )}
+                      <div className="bg-black/30 rounded-2xl p-2.5 border border-white/10">
+                        <span className="text-[10px] text-white/50 uppercase font-bold block">PAR-Q Cardíaco</span>
+                        <p className="font-bold text-emerald-400 mt-0.5">
+                          {!anamneseData.parqHeartIssue && !anamneseData.parqChestPain ? '✓ Sem Restrições' : '⚠️ Sob Monitoramento'}
+                        </p>
+                        <p className="text-[10px] text-white/50">Liberação para esforço</p>
+                      </div>
+
+                      <div className="bg-black/30 rounded-2xl p-2.5 border border-white/10">
+                        <span className="text-[10px] text-white/50 uppercase font-bold block">Histórico Articular</span>
+                        <p className="font-bold text-white mt-0.5 truncate" title={anamneseData.injuriesHistory.join(', ')}>
+                          {anamneseData.injuriesHistory.length > 0 ? anamneseData.injuriesHistory.join(', ') : 'Nenhuma lesão'}
+                        </p>
+                        <p className="text-[10px] text-white/50">{anamneseData.strengthTraining}</p>
+                      </div>
+
+                      <div className="bg-black/30 rounded-2xl p-2.5 border border-white/10">
+                        <span className="text-[10px] text-white/50 uppercase font-bold block">Rotina & Frequência</span>
+                        <p className="font-bold text-white mt-0.5">
+                          {anamneseData.weeklyAvailabilityDays} dias por semana
+                        </p>
+                        <p className="text-[10px] text-white/50">{anamneseData.preferredTimeOfDay}</p>
                       </div>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-slate-400 mt-2">{currentUser.email}</p>
-            </div>
+            )}
 
             {/* Central do Aluno Go Team - Ferramentas e Recursos */}
             <div className="px-5 pt-4 pb-2">
@@ -2984,73 +2542,6 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
                   </div>
                 )}
               </div>
-
-              {/* Canais Oficiais de Contato & Suporte */}
-              <div className="mt-4 pt-3 border-t border-slate-200/80 space-y-2.5">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Canais Oficiais & Contato
-                </p>
-
-                {/* Card WhatsApp do Treinador Leandro */}
-                <a
-                  href={CONTATO_WHATSAPP}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="bg-gradient-to-r from-[#0d3b45] to-[#124d5b] hover:from-[#092930] hover:to-[#0f404b] text-white rounded-2xl p-3.5 flex items-center justify-between group shadow-md transition border border-white/10"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <div className="w-11 h-11 rounded-full overflow-hidden border-2 border-[#c6f43a] shadow-sm">
-                        <img
-                          src="https://images.unsplash.com/photo-1594824813525-63567675122e?w=150&auto=format&fit=crop&q=80"
-                          alt="Treinador Leandro"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-[#0d3b45] rounded-full animate-pulse" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-xs sm:text-sm font-black text-white">
-                          Falar com o Treinador Leandro
-                        </p>
-                        <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-1.5 py-0.2 rounded">
-                          WhatsApp
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#c6f43a] font-medium mt-0.5">
-                        Ajuste de treinos, ritmos e acompanhamento individual
-                      </p>
-                    </div>
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold shadow-sm group-hover:scale-110 transition flex-none">
-                    <MessageCircle className="w-4 h-4" />
-                  </div>
-                </a>
-
-                {/* Card Instagram Go Team */}
-                <a
-                  href={INSTAGRAM_LINK}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="bg-white border border-slate-200 hover:border-pink-300 hover:shadow-sm text-slate-700 rounded-2xl p-3 flex items-center justify-between group transition shadow-xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white flex items-center justify-center font-bold shadow-xs flex-none">
-                      <Instagram className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800 group-hover:text-pink-600 transition">
-                        Instagram @goteamrunning
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        Fotos dos treinos, bastidores das provas e avisos do pelotão
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-pink-600 group-hover:translate-x-0.5 transition flex-none" />
-                </a>
-              </div>
             </div>
 
             {/* Botão Sair / Voltar */}
@@ -3102,13 +2593,13 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveTab('evoluir')}
+          onClick={() => setActiveTab('cadastro')}
           className={`flex flex-col items-center gap-0.5 text-[11px] font-semibold transition cursor-pointer ${
-            activeTab === 'evoluir' ? 'text-[#0d3b45] font-bold scale-105' : 'text-slate-400 hover:text-slate-600'
+            activeTab === 'cadastro' ? 'text-[#0d3b45] font-bold scale-105' : 'text-slate-400 hover:text-slate-600'
           }`}
         >
-          <span className="text-xl">🚀</span>
-          Evoluir
+          <span className="text-xl">📝</span>
+          Cadastro
         </button>
       </nav>
 
@@ -3173,6 +2664,98 @@ export const StudentAreaView: React.FC<StudentAreaViewProps> = ({
         onSuccess={handleUpdateAthleteProfile}
         initialMode="register"
       />
+
+      {/* Modal de Atualização Rápida de Peso Corporal */}
+      {isEditWeightModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-sm rounded-3xl bg-[#082830] text-white border-2 border-[#c6f43a]/40 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#c6f43a] text-[#0d3b45] flex items-center justify-center font-black text-base shadow-sm">
+                  ⚖️
+                </div>
+                <div>
+                  <h3 className="text-base font-display font-black text-white uppercase tracking-wide">
+                    Atualizar Peso Corporal
+                  </h3>
+                  <p className="text-[11px] text-[#c6f43a]">
+                    Calibre o cálculo de carga e ritmo dos treinos
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditWeightModalOpen(false)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-bold transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const val = parseFloat(editWeightValue);
+                if (!isNaN(val) && val > 20 && val < 300) {
+                  handleUpdateDirectWeight(val);
+                }
+              }}
+              className="space-y-4"
+            >
+              <div className="text-center py-2">
+                <label className="block text-xs uppercase font-bold text-white/60 mb-2">
+                  Peso Atual (kg)
+                </label>
+                <div className="inline-flex items-center justify-center gap-2 bg-black/40 border-2 border-[#c6f43a] rounded-2xl px-5 py-3">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="30"
+                    max="250"
+                    value={editWeightValue}
+                    onChange={(e) => setEditWeightValue(e.target.value)}
+                    autoFocus
+                    className="w-24 text-center text-3xl font-black text-[#c6f43a] bg-transparent outline-none focus:ring-0"
+                  />
+                  <span className="text-lg font-black text-white/70">kg</span>
+                </div>
+              </div>
+
+              {/* Ajustes Rápidos */}
+              <div className="flex items-center justify-center gap-2">
+                {[-1.0, -0.5, +0.5, +1.0].map((delta) => (
+                  <button
+                    key={delta}
+                    type="button"
+                    onClick={() => {
+                      const cur = parseFloat(editWeightValue) || currentAthleteWeight;
+                      setEditWeightValue((cur + delta).toFixed(1));
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition cursor-pointer"
+                  >
+                    {delta > 0 ? `+${delta}` : delta} kg
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditWeightModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-white/20 text-xs font-bold text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-[#c6f43a] hover:bg-[#b8e432] text-[#0d3b45] text-xs font-black uppercase tracking-wider transition shadow-md cursor-pointer"
+                >
+                  Salvar Peso
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
